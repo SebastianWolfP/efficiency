@@ -149,14 +149,14 @@ function openSortSheet(onPick) {
   });
 }
 
-function scoreCardHtml(stock, value, { title, hint, clearable } = {}) {
+function scoreCardHtml(stock, value, { hint, clearable } = {}) {
   const v = value ?? 50;
   return `
     <div class="score-card ${value == null ? 'unset' : ''}" data-id="${esc(stock.id)}">
       <div class="score-head">
         ${avatar(stock)}
         <div class="row-main">
-          <div class="row-title">${esc(title ?? stock.name)}</div>
+          <div class="row-title">${esc(stock.name)}</div>
           <div class="score-label">${value == null ? 'Noch nicht bewertet' : scoreLabel(value)}</div>
         </div>
         <div class="score-val">${value ?? '–'}</div>
@@ -268,11 +268,6 @@ function renderDetail(id) {
     </div>
     ${priceBlockHtml()}
 
-    <section class="quick">
-      ${scoreCardHtml(stock, entries[today] ?? null, { title: 'Heute bewerten', hint: isIndex ? 'Wie fühlst du dich insgesamt?' : null })}
-      <button class="btn" data-save disabled>Speichern</button>
-    </section>
-
     <h2 class="section-title">Kennzahlen</h2>
     <div class="stats">
       ${stat('Seit IPO', `<span class="${st.sinceIpo >= 0 ? 'pos' : 'neg'}">${fmtSignedPct(st.sinceIpo)}</span>`)}
@@ -309,18 +304,6 @@ function renderDetail(id) {
 
   setupPriceBlock(view.querySelector('.price-block'), stock, 'detail');
   view.querySelector('[data-edit]').onclick = () => openStockSheet(stock);
-
-  const saveBtn = view.querySelector('.quick [data-save]');
-  let value = null;
-  wireScoreCard(view.querySelector('.quick .score-card'), (v) => {
-    value = v;
-    saveBtn.disabled = false;
-  });
-  saveBtn.onclick = () => {
-    store.setScore(id, today, value);
-    toast('Bewertung gespeichert');
-    route(false);
-  };
 }
 
 function renderCheckin(arg) {

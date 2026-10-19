@@ -1,4 +1,4 @@
-const CACHE = 'habit-republic-v4';
+const CACHE = 'habit-republic-v5';
 const ASSETS = [
   './',
   './index.html',
