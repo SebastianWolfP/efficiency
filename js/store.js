@@ -15,6 +15,9 @@ function sanitize(raw) {
 
   const ms = Number(raw.settings?.missingScore);
   if (Number.isFinite(ms) && ms >= 0 && ms <= 100) s.settings.missingScore = ms;
+  if (typeof raw.settings?.habitSort === 'string' && /^[A-Za-z]{1,20}$/.test(raw.settings.habitSort)) {
+    s.settings.habitSort = raw.settings.habitSort;
+  }
 
   const ids = new Set();
   for (const x of Array.isArray(raw.stocks) ? raw.stocks : []) {
@@ -29,6 +32,10 @@ function sanitize(raw) {
       emoji: String(x.emoji ?? '').slice(0, 16),
       startPrice: price > 0 && price < 1e9 ? price : 100,
       createdAt: isDateKey(x.createdAt) && x.createdAt <= today ? x.createdAt : today,
+      splits: (Array.isArray(x.splits) ? x.splits : [])
+        .map((sp) => ({ date: sp?.date, ratio: Number(sp?.ratio) }))
+        .filter((sp) => isDateKey(sp.date) && sp.ratio > 1 && sp.ratio <= 1000)
+        .slice(0, 50),
     });
   }
 
@@ -80,7 +87,7 @@ export function setScore(id, date, v) {
 }
 
 export function addStock(data) {
-  const s = { ...data, id: uid(), type: 'habit' };
+  const s = { ...data, id: uid(), type: 'habit', splits: [] };
   state.stocks.push(s);
   state.entries[s.id] = {};
   persist();
@@ -89,6 +96,17 @@ export function addStock(data) {
 
 export function updateStock(id, patch) {
   Object.assign(stock(id), patch);
+  persist();
+}
+
+export function addSplit(id, ratio) {
+  const s = stock(id);
+  (s.splits ??= []).push({ date: dateKey(), ratio });
+  persist();
+}
+
+export function removeSplit(id, index) {
+  stock(id).splits.splice(index, 1);
   persist();
 }
 

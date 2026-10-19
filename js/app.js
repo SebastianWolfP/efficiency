@@ -16,6 +16,7 @@ const ICON = {
   fwd: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>',
   more: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
   chev: '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>',
+  sort: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M3 8l4-4 4 4M17 20V4M13 16l4 4 4-4"/></svg>',
 };
 
 function simOf(stock) {
@@ -70,7 +71,7 @@ const priceBlockHtml = () => `
     <div class="ranges">${RANGES.map((r) => `<button class="range" data-range="${r}">${r}</button>`).join('')}</div>
   </section>`;
 
-function setupPriceBlock(el, stock, key) {
+function setupPriceBlock(el, stock, key, onRange) {
   const sim = simOf(stock);
   const priceEl = el.querySelector('[data-price]');
   const changeEl = el.querySelector('[data-change]');
@@ -94,27 +95,58 @@ function setupPriceBlock(el, stock, key) {
     chart.draw(series);
     el.querySelectorAll('.range').forEach((b) => b.classList.toggle('active', b.dataset.range === r));
     show(series.points[series.points.length - 1], RANGE_LABEL[r]);
+    onRange?.(r);
   };
   el.querySelectorAll('.range').forEach((b) => { b.onclick = () => setRange(b.dataset.range); });
   setRange(rangeFor[key]);
 }
 
-function rowHtml(stock) {
-  const day = simOf(stock).days.at(-1);
-  const ch = day.close / day.open - 1;
-  const sc = store.score(stock.id, dateKey());
+const SORTS = {
+  manual: { label: 'Reihenfolge beim Anlegen', fn: null },
+  name: { label: 'Name A–Z', fn: (a, b) => a.stock.name.localeCompare(b.stock.name, 'de') },
+  perfDesc: { label: 'Top-Gewinner', fn: (a, b) => b.change - a.change },
+  perfAsc: { label: 'Top-Verlierer', fn: (a, b) => a.change - b.change },
+  priceDesc: { label: 'Kurs: höchster zuerst', fn: (a, b) => b.price - a.price },
+  priceAsc: { label: 'Kurs: niedrigster zuerst', fn: (a, b) => a.price - b.price },
+  scoreDesc: { label: 'Score heute: höchster zuerst', fn: (a, b) => (b.score ?? -1) - (a.score ?? -1) },
+};
+const currentSort = () => (SORTS[store.settings().habitSort] ? store.settings().habitSort : 'manual');
+
+function habitItem(stock, range) {
+  const series = buildSeries(stock.id, simOf(stock), range);
+  const price = series.points[series.points.length - 1].v;
+  return { stock, price, change: price / series.base - 1, score: store.score(stock.id, dateKey()) };
+}
+
+function rowHtml({ stock, price, change, score }) {
   return `
     <a class="row" href="#/stock/${encodeURIComponent(stock.id)}">
       ${avatar(stock)}
       <div class="row-main">
         <div class="row-title">${esc(stock.name)}</div>
-        <div class="row-sub">${esc(stock.ticker)} · ${sc == null ? '<span class="open-dot"></span>offen' : `Score ${sc}`}</div>
+        <div class="row-sub">${esc(stock.ticker)} · ${score == null ? '<span class="open-dot"></span>offen' : `Score ${score}`}</div>
       </div>
       <div class="row-right">
-        <div class="row-price">${fmtEUR(day.close)}</div>
-        <div class="row-change ${ch >= 0 ? 'pos' : 'neg'}">${ch >= 0 ? '▲' : '▼'} ${fmtPct(Math.abs(ch))}</div>
+        <div class="row-price">${fmtEUR(price)}</div>
+        <div class="row-change ${change >= 0 ? 'pos' : 'neg'}">${change >= 0 ? '▲' : '▼'} ${fmtPct(Math.abs(change))}</div>
       </div>
     </a>`;
+}
+
+function openSortSheet(onPick) {
+  const cur = currentSort();
+  const sheet = openSheet(`
+    <h2 class="sheet-title">Sortieren</h2>
+    <div class="group">${Object.entries(SORTS).map(([k, s]) => `
+      <button class="group-row" data-key="${k}"><span>${s.label}</span>${k === cur ? '<span class="tick">✓</span>' : ''}</button>`).join('')}
+    </div>`);
+  sheet.querySelectorAll('[data-key]').forEach((b) => {
+    b.onclick = () => {
+      store.updateSettings({ habitSort: b.dataset.key });
+      closeSheet();
+      onPick();
+    };
+  });
 }
 
 function scoreCardHtml(stock, value, { title, hint, clearable } = {}) {
@@ -179,13 +211,30 @@ function renderHome() {
       </div>
       ${open ? `<span class="badge">${open}</span>` : '<span class="check">✓</span>'}
     </a>
-    <h2 class="section-title">Habits</h2>
-    <div class="list">
-      ${habits.length ? habits.map(rowHtml).join('') : '<div class="empty">Noch keine Habits. Leg deine erste Aktie an – z. B. Fitness oder Spanisch.</div>'}
+    <div class="section-head">
+      <h2 class="section-title">Habits</h2>
+      ${habits.length > 1 ? `<button class="sort-btn" data-sort>${ICON.sort}<span data-sort-label></span></button>` : ''}
+    </div>
+    ${habits.length ? '<div class="section-caption" data-caption></div>' : ''}
+    <div class="list" data-list>
+      ${habits.length ? '' : '<div class="empty">Noch keine Habits. Leg deine erste Aktie an – z. B. Fitness oder Spanisch.</div>'}
     </div>
     <button class="btn secondary add-btn" data-add>+ Neues Habit anlegen</button>`;
 
-  setupPriceBlock(view.querySelector('.price-block'), index, 'home');
+  const renderList = () => {
+    if (!habits.length) return;
+    const range = rangeFor.home;
+    const sort = currentSort();
+    const items = habits.map((s) => habitItem(s, range));
+    if (SORTS[sort].fn) items.sort(SORTS[sort].fn);
+    view.querySelector('[data-list]').innerHTML = items.map(rowHtml).join('');
+    view.querySelector('[data-caption]').textContent = `Performance: ${RANGE_LABEL[range]}`;
+    const label = view.querySelector('[data-sort-label]');
+    if (label) label.textContent = SORTS[sort].label;
+  };
+
+  setupPriceBlock(view.querySelector('.price-block'), index, 'home', renderList);
+  view.querySelector('[data-sort]')?.addEventListener('click', () => openSortSheet(renderList));
   view.querySelector('[data-add]').onclick = () => openStockSheet();
 }
 
@@ -239,10 +288,10 @@ function renderDetail(id) {
     <h2 class="section-title">Ereignisse</h2>
     ${events.length ? `<div class="list">${events.map((e) => `
       <div class="event">
-        <div class="event-icon ${e.type === 'crash' ? 'neg' : 'pos'}">${e.type === 'crash' ? '▼' : '▲'}</div>
+        <div class="event-icon ${e.type === 'crash' ? 'neg' : e.type === 'rally' ? 'pos' : ''}">${e.type === 'split' ? '÷' : e.type === 'crash' ? '▼' : '▲'}</div>
         <div class="row-main">
           <div class="event-title">${esc(headline(stock, e))}</div>
-          <div class="row-sub">${fmtDateShort(e.date)} · <span class="${e.pct >= 0 ? 'pos' : 'neg'}">${fmtSignedPct(e.pct)}</span></div>
+          <div class="row-sub">${fmtDateShort(e.date)} · ${e.type === 'split' ? `Split ${e.ratio}:1` : `<span class="${e.pct >= 0 ? 'pos' : 'neg'}">${fmtSignedPct(e.pct)}</span>`}</div>
         </div>
       </div>`).join('')}</div>` : '<div class="empty">Noch keine besonderen Kursereignisse.</div>'}
 
@@ -406,7 +455,8 @@ function openStockSheet(stock) {
       <p class="muted small">Startkurs und IPO-Datum bestimmen den gesamten Kursverlauf. Mit einem früheren Datum kannst du alte Werte nachtragen.</p>
       <button class="btn" type="submit">${isNew ? 'Aktie anlegen' : 'Speichern'}</button>
       ${!isNew && s.type !== 'index' ? '<button class="btn danger" type="button" data-delete>Habit löschen</button>' : ''}
-    </form>`);
+    </form>
+    ${isNew ? '' : splitBoxHtml(stock)}`);
 
   const form = sheet.querySelector('form');
   const f = form.elements;
@@ -444,6 +494,50 @@ function openStockSheet(stock) {
     closeSheet();
     location.hash = '#/';
   });
+
+  if (!isNew) wireSplitBox(sheet, stock);
+}
+
+const SPLIT_RATIOS = [2, 3, 4, 5, 10];
+
+function splitBoxHtml(stock) {
+  const price = simOf(stock).days.at(-1).close;
+  const splits = stock.splits ?? [];
+  return `
+    <section class="split-box">
+      <h3 class="split-title">Aktiensplit</h3>
+      <p class="muted small">Teilt den Kurs und passt die gesamte Historie an – die prozentuale Entwicklung bleibt identisch. Aktuell ${fmtEUR(price)}.</p>
+      <div class="field-row">
+        <div class="field"><select data-ratio>${SPLIT_RATIOS.map((r) => `<option value="${r}">${r}:1 → ${fmtEUR(price / r)}</option>`).join('')}</select></div>
+        <button class="btn secondary split-btn" type="button" data-split>Splitten</button>
+      </div>
+      ${splits.length ? `<div class="split-list">${splits.map((sp, i) => `
+        <div class="split-item">
+          <span>${sp.ratio}:1 · <span class="muted">${fmtDateShort(sp.date)}</span></span>
+          <button class="link-btn" type="button" data-unsplit="${i}">Rückgängig</button>
+        </div>`).join('')}</div>` : ''}
+    </section>`;
+}
+
+function wireSplitBox(sheet, stock) {
+  const ratioSel = sheet.querySelector('[data-ratio]');
+  sheet.querySelector('[data-split]').addEventListener('click', () => {
+    const ratio = Number(ratioSel.value);
+    if (!SPLIT_RATIOS.includes(ratio)) return;
+    const price = simOf(stock).days.at(-1).close;
+    if (!confirm(`Split ${ratio}:1 durchführen?\n${fmtEUR(price)} → ${fmtEUR(price / ratio)}`)) return;
+    store.addSplit(stock.id, ratio);
+    closeSheet();
+    toast(`Split ${ratio}:1 durchgeführt`);
+    route(false);
+  });
+  sheet.querySelectorAll('[data-unsplit]').forEach((b) => b.addEventListener('click', () => {
+    if (!confirm('Diesen Split rückgängig machen?')) return;
+    store.removeSplit(stock.id, Number(b.dataset.unsplit));
+    closeSheet();
+    toast('Split rückgängig gemacht');
+    route(false);
+  }));
 }
 
 function openSheet(html) {

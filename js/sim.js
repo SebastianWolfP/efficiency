@@ -38,10 +38,13 @@ export function simulate(stock, entries, now = new Date(), missingScore = 40) {
   const start = stock.createdAt > today ? today : stock.createdAt;
   const ipoDate = addDays(start, -1);
   const mood0 = marketMood(ipoDate);
-  const days = [{ date: ipoDate, open: stock.startPrice, close: stock.startPrice, score: null, ipo: true }];
+  // The model is scale-invariant, so a split simply rescales the whole history.
+  const splits = stock.splits ?? [];
+  const startPrice = stock.startPrice / splits.reduce((f, s) => f * s.ratio, 1);
+  const days = [{ date: ipoDate, open: startPrice, close: startPrice, score: null, ipo: true }];
   const events = [];
 
-  let logF = Math.log(stock.startPrice);
+  let logF = Math.log(startPrice);
   let d = 0, emaS = 0, emaL = 0, bad = 0, good = 0;
   const win = [];
 
@@ -92,6 +95,8 @@ export function simulate(stock, entries, now = new Date(), missingScore = 40) {
       if ((event.type === 'crash') === (pct < 0)) events.push({ ...event, date, pct });
     }
   }
+  for (const s of splits) events.push({ type: 'split', date: s.date, ratio: s.ratio });
+  events.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   return { days, events };
 }
 
@@ -215,6 +220,7 @@ const HEADLINES = {
 };
 
 export function headline(stock, ev) {
+  if (ev.type === 'split') return `Aktiensplit ${ev.ratio}:1 – ${stock.name} wird optisch günstiger`;
   const list = HEADLINES[`${ev.type}/${ev.cause}`];
   return list[Math.floor(rng(stock.id, ev.date, 'news')() * list.length)].replace('{n}', stock.name);
 }
