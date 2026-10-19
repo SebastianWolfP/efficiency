@@ -98,6 +98,8 @@ export function mountChart(host, onScrub) {
     move(e);
   });
   svg.addEventListener('pointermove', (e) => active && move(e));
+  // iOS fallback: block page scroll while the finger is on the chart.
+  svg.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
   ['pointerup', 'pointercancel', 'lostpointercapture'].forEach((ev) => svg.addEventListener(ev, end));
 
   return { draw, redraw: () => series && draw(series) };

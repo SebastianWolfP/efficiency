@@ -76,7 +76,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   position: relative;
   height: 250px;
   margin: 10px -20px 6px;
-  touch-action: pan-y;
+  touch-action: none;
 }
 .chart-svg { display: block; overflow: visible; }
 .chart .line { fill: none; stroke: #fff; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
